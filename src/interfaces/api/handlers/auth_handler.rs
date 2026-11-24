@@ -15,6 +15,7 @@ use crate::application::dtos::user_dto::{
     PublicUserDto, RefreshTokenDto, RegisterDto, SelfUserDto, SetupAdminDto, UpgradeToInternalDto,
 };
 use crate::application::services::auth_application_service::{OidcCallbackResult, RegisterResult};
+use crate::interfaces::middleware::trusted_proxy::request_origin;
 use crate::application::services::registration_policy::domain_allowed;
 use crate::common::di::AppState;
 use crate::interfaces::api::cookie_auth;
@@ -1583,6 +1584,7 @@ pub async fn setup_admin(
 )]
 pub async fn oidc_authorize(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let auth_service = state
         .auth_service
@@ -1600,7 +1602,9 @@ pub async fn oidc_authorize(
     }
 
     // Prepare OIDC authorization flow (generates CSRF state, PKCE pair, nonce)
-    let authorize_url = auth_app.prepare_oidc_authorize().await?;
+    let authorize_url = auth_app
+        .prepare_oidc_authorize(request_origin(&headers).as_deref())
+        .await?;
 
     tracing::info!("OIDC authorize redirect generated");
 
@@ -1627,6 +1631,7 @@ pub async fn oidc_authorize(
 pub async fn oidc_link_start(
     State(state): State<Arc<AppState>>,
     CurrentUserId(user_id): CurrentUserId,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let auth_service = state
         .auth_service
@@ -1642,7 +1647,9 @@ pub async fn oidc_link_start(
         ));
     }
 
-    let authorize_url = auth_app.prepare_oidc_link(user_id).await?;
+    let authorize_url = auth_app
+        .prepare_oidc_link(user_id, request_origin(&headers).as_deref())
+        .await?;
 
     Ok(Json(serde_json::json!({
         "authorize_url": authorize_url,
