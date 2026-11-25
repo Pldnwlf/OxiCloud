@@ -2056,9 +2056,11 @@ mod oidc_redirect_tests {
 
     #[test]
     fn base_path_stays_in_frontend_base() {
-        let r = cfg(&format!("{PRIMARY},https://lan.example/oxi/api/auth/oidc/callback"))
-            .redirects()
-            .unwrap();
+        let r = cfg(&format!(
+            "{PRIMARY},https://lan.example/oxi/api/auth/oidc/callback"
+        ))
+        .redirects()
+        .unwrap();
         assert_eq!(r[1].frontend_url, "https://lan.example/oxi");
     }
 
@@ -2078,9 +2080,18 @@ mod oidc_redirect_tests {
     #[test]
     fn for_origin_matches_exactly_and_port_matters() {
         let c = cfg(&format!("{PRIMARY},{LAN}"));
-        assert_eq!(c.redirect_for_origin(Some("http://192.168.1.10:8086")).uri, LAN);
-        assert_eq!(c.redirect_for_origin(Some("http://192.168.1.10:9999")).uri, PRIMARY);
-        assert_eq!(c.redirect_for_origin(Some("https://192.168.1.10:8086")).uri, PRIMARY);
+        assert_eq!(
+            c.redirect_for_origin(Some("http://192.168.1.10:8086")).uri,
+            LAN
+        );
+        assert_eq!(
+            c.redirect_for_origin(Some("http://192.168.1.10:9999")).uri,
+            PRIMARY
+        );
+        assert_eq!(
+            c.redirect_for_origin(Some("https://192.168.1.10:8086")).uri,
+            PRIMARY
+        );
     }
 
     #[test]

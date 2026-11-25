@@ -15,13 +15,13 @@ use crate::application::dtos::user_dto::{
     PublicUserDto, RefreshTokenDto, RegisterDto, SelfUserDto, SetupAdminDto, UpgradeToInternalDto,
 };
 use crate::application::services::auth_application_service::{OidcCallbackResult, RegisterResult};
-use crate::interfaces::middleware::trusted_proxy::request_origin;
 use crate::application::services::registration_policy::domain_allowed;
 use crate::common::di::AppState;
 use crate::interfaces::api::cookie_auth;
 use crate::interfaces::errors::AppError;
 use crate::interfaces::middleware::auth::{AuthUser, CurrentUserId};
 use crate::interfaces::middleware::trusted_proxy::client_ip_from_parts;
+use crate::interfaces::middleware::trusted_proxy::request_origin;
 use serde::Deserialize;
 
 /// Public auth routes, no authentication required.
@@ -1238,7 +1238,16 @@ pub async fn logout(
     // Post-logout redirect URI = OxiCloud's `/login`. Must be registered on
     // the OIDC client (Keycloak: "Valid post logout redirect URIs"), else
     // the IdP will refuse the redirect and strand the user on its error page.
-    let post_logout_redirect_uri = format!("{}/login", state.core.config.base_url());
+    // #117: a non-primary origin lands back on its own frontend; the primary
+    // keeps base_url exactly (no change for single-origin deployments).
+    let post_logout_redirect_uri = match auth_service
+        .auth_application_service
+        .oidc_config()
+        .map(|c| c.redirect_for_origin(request_origin(&headers).as_deref()))
+    {
+        Some(r) if !r.is_primary => format!("{}/login", r.frontend_url),
+        _ => format!("{}/login", state.core.config.base_url()),
+    };
 
     let post_logout_url = auth_service
         .auth_application_service
@@ -1744,6 +1753,16 @@ pub async fn oidc_callback(
 
     tracing::info!("OIDC callback received with code");
 
+    // #117: the IdP redirected the browser to whichever listed redirect_uri the
+    // flow used, so the callback's own request origin picks that entry's
+    // frontend base. Unlisted/absent origin falls back to the primary. Computed
+    // once here, reused by every redirect arm below.
+    let frontend_url = auth_app
+        .oidc_config()
+        .unwrap()
+        .redirect_for_origin(request_origin(&headers).as_deref())
+        .frontend_url;
+
     // Capture IP + UA so the OIDC-minted session row lands populated
     // (admin panel would otherwise show "—" for SSO logins). Callback
     // is a browser-initiated GET after the IdP redirect, so peer is
@@ -1774,8 +1793,6 @@ pub async fn oidc_callback(
         Ok(r) => r,
         Err(e) => {
             tracing::error!("OIDC callback failed: {}", e);
-            let config = auth_app.oidc_config().unwrap();
-            let frontend_url = config.frontend_url.trim_end_matches('/');
             // AccessDenied covers the CSRF/state/code/nonce validation
             // failures (the common "refresh replayed a consumed state"
             // case). Everything else is bucketed as a generic callback
@@ -1793,8 +1810,6 @@ pub async fn oidc_callback(
     match result {
         OidcCallbackResult::WebLogin { exchange_code } => {
             // Regular web login, redirect to frontend with exchange code
-            let config = auth_app.oidc_config().unwrap();
-            let frontend_url = config.frontend_url.trim_end_matches('/');
             let redirect_url = format!("{}/login?oidc_code={}", frontend_url, exchange_code);
             tracing::info!("OIDC login successful, redirecting with exchange code");
             Ok(Redirect::temporary(&redirect_url).into_response())
@@ -1835,8 +1850,6 @@ pub async fn oidc_callback(
         // mount to render a toast + strip the param via history.
         // See docs/plan/oidc-account-linking.md § UX flow — link.
         OidcCallbackResult::LinkCompleted { user_id } => {
-            let config = auth_app.oidc_config().unwrap();
-            let frontend_url = config.frontend_url.trim_end_matches('/');
             let redirect_url = format!("{}/profile?linked=1", frontend_url);
             tracing::info!(
                 user_id = %user_id,
@@ -1845,8 +1858,6 @@ pub async fn oidc_callback(
             Ok(Redirect::temporary(&redirect_url).into_response())
         }
         OidcCallbackResult::LinkRefused { reason } => {
-            let config = auth_app.oidc_config().unwrap();
-            let frontend_url = config.frontend_url.trim_end_matches('/');
             let redirect_url = format!("{}/profile?link_error={}", frontend_url, reason);
             tracing::info!(
                 reason = reason,
@@ -1867,8 +1878,6 @@ pub async fn oidc_callback(
         // auto_link_email_not_verified, already_linked_elsewhere,
         // email_ambiguous.
         OidcCallbackResult::AutoLinkRefused { reason } => {
-            let config = auth_app.oidc_config().unwrap();
-            let frontend_url = config.frontend_url.trim_end_matches('/');
             let redirect_url = format!("{}/login?login_error={}", frontend_url, reason);
             tracing::info!(
                 reason = reason,
@@ -1891,8 +1900,6 @@ pub async fn oidc_callback(
                 // than silently 200'ing the user through.
                 _ => "callback_denied",
             };
-            let config = auth_app.oidc_config().unwrap();
-            let frontend_url = config.frontend_url.trim_end_matches('/');
             let redirect_url = format!("{}/login?login_error={}", frontend_url, key);
             tracing::info!(
                 reason = reason,

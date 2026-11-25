@@ -5547,7 +5547,7 @@ impl AuthApplicationService {
     ) -> Result<(String, String), DomainError> {
         use rand_core::{OsRng, RngCore};
         use sha2::{Digest, Sha256};
-        let mut random_hex = || {
+        let random_hex = || {
             let mut b = [0u8; 32];
             OsRng.fill_bytes(&mut b);
             b
@@ -5560,7 +5560,11 @@ impl AuthApplicationService {
             .oidc_config()
             .map(|c| c.redirect_for_origin(origin).uri)
             .ok_or_else(|| {
-                DomainError::new(ErrorKind::InternalError, "OIDC", "OIDC config not available")
+                DomainError::new(
+                    ErrorKind::InternalError,
+                    "OIDC",
+                    "OIDC config not available",
+                )
             })?;
 
         let authorize_url = oidc
@@ -5594,7 +5598,9 @@ impl AuthApplicationService {
             )
         })?;
 
-        let (state_token, authorize_url) = self.begin_oidc_flow(&oidc, None, FlowIntent::Login, origin).await?;
+        let (state_token, authorize_url) = self
+            .begin_oidc_flow(&oidc, None, FlowIntent::Login, origin)
+            .await?;
 
         tracing::info!(
             "OIDC authorize flow prepared (state={}...)",
@@ -5640,7 +5646,9 @@ impl AuthApplicationService {
             ));
         }
 
-        let (state_token, authorize_url) = self.begin_oidc_flow(&oidc, None, FlowIntent::Link { user_id }, origin).await?;
+        let (_state_token, authorize_url) = self
+            .begin_oidc_flow(&oidc, None, FlowIntent::Link { user_id }, origin)
+            .await?;
 
         tracing::info!(
             target: "audit",
@@ -5886,7 +5894,14 @@ impl AuthApplicationService {
             )
         })?;
 
-        let (state_token, authorize_url) = self.begin_oidc_flow(&oidc, Some(nc_flow_token.to_string()), FlowIntent::Login, origin).await?;
+        let (state_token, authorize_url) = self
+            .begin_oidc_flow(
+                &oidc,
+                Some(nc_flow_token.to_string()),
+                FlowIntent::Login,
+                origin,
+            )
+            .await?;
 
         tracing::info!(
             "OIDC authorize flow prepared for Nextcloud Login Flow v2 (state={}...)",
