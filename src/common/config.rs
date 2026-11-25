@@ -2004,10 +2004,9 @@ impl OidcConfig {
     /// Entry whose origin equals `origin`, else the primary. The request
     /// origin only selects among listed entries, never becomes a URL.
     pub fn redirect_for_origin(&self, origin: Option<&str>) -> OidcRedirect {
+        let _ = origin; // RED-PROOF ONLY — ignore origin, always primary
         let list = self.redirects().unwrap_or_default();
-        origin
-            .and_then(|o| list.iter().find(|r| r.origin == o))
-            .or_else(|| list.first())
+        list.first()
             .cloned()
             // Unparseable config is refused at startup; keep today's value here.
             .unwrap_or_else(|| OidcRedirect {
